@@ -16,6 +16,6 @@ jobs:
         with:
           python-version: '3.9'
       - name: Test assembler
-        run: python sw-toolchain/asm/assembler.py examples/vecadd.s
+        run: python sw-toolchain/asm/assembler.py sw-toolchain/examples/vecadd.s
       - name: Test simulator
-        run: python sw-toolchain/sim/simulator.py examples/vecadd.hex
+        run: python sw-toolchain/sim/simulator.py sw-toolchain/examples/vecadd.hex
