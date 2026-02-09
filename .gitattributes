@@ -1,0 +1,74 @@
+# Git attributes for flux GPU
+# Ensures consistent line endings and proper diff handling
+
+# Auto-detect text files and perform LF normalization
+* text=auto
+
+# Source code
+*.sv text eol=lf
+*.v text eol=lf
+*.py text eol=lf
+*.s text eol=lf
+*.asm text eol=lf
+
+# Scripts
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+
+# Configuration
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+
+# Makefiles (must use tabs)
+Makefile text eol=lf
+*.mk text eol=lf
+
+# Windows scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# Archives
+*.zip binary
+*.tar binary
+*.gz binary
+*.tgz binary
+
+# HDL simulation outputs
+*.vcd binary
+*.fst binary
+*.ghw binary
+
+# FPGA/ASIC files
+*.bit binary
+*.bin binary
+*.gds binary
+*.oas binary
+
+# Git-generated files
+.gitattributes export-ignore
+.gitignore export-ignore
+.github export-ignore
+
+# Diff settings for specific file types
+*.sv diff=verilog
+*.v diff=verilog
+*.py diff=python
+*.md diff=markdown

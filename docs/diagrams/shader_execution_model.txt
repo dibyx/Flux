@@ -1,0 +1,130 @@
+# SIMT Execution Model Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    INSTRUCTION DECODER / SCHEDULER                   │
+│                   Single Instruction → All Threads                   │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   Instruction Broadcast │
+                    │   "ADD R1, R2, R3"      │
+                    └────────────┬────────────┘
+                                 │
+        ┌────────────────────────┴────────────────────────┐
+        │                                                  │
+        ▼                                                  ▼
+┌───────────────────────────────────────┐    ┌───────────────────────┐
+│        WARP (32 Threads)              │    │   EXECUTION UNITS     │
+│  ┌────┬────┬────┬────┬────┬────┬────┐│    │  ┌─────────────────┐  │
+│  │ T0 │ T1 │ T2 │ T3 │ T4 │ T5 │ T6 ││◄───┼─►│   ALU 0 (×4)    │  │
+│  └────┴────┴────┴────┴────┴────┴────┘│    │  │  [+ - * /]      │  │
+│  ┌────┬────┬────┬────┬────┬────┬────┐│    │  └─────────────────┘  │
+│  │ T7 │ T8 │ T9 │T10 │T11 │T12 │T13 ││    │  ┌─────────────────┐  │
+│  └────┴────┴────┴────┴────┴────┴────┘│◄───┼─►│   ALU 1 (×4)    │  │
+│  ┌────┬────┬────┬────┬────┬────┬────┐│    │  │  [+ - * /]      │  │
+│  │T14 │T15 │T16 │T17 │T18 │T19 │T20 ││    │  └─────────────────┘  │
+│  └────┴────┴────┴────┴────┴────┴────┘│    │  ┌─────────────────┐  │
+│  ┌────┬────┬────┬────┬────┬────┬────┐│◄───┼─►│   ALU 2 (×4)    │  │
+│  │T21 │T22 │T23 │T24 │T25 │T26 │T27 ││    │  │  [+ - * /]      │  │
+│  └────┴────┴────┴────┴────┴────┴────┘│    │  └─────────────────┘  │
+│  ┌────┬────┬────┬────┬────┬────┬────┐│    │  ┌─────────────────┐  │
+│  │T28 │T29 │T30 │T31 │    │    │    ││◄───┼─►│   ALU 3 (×4)    │  │
+│  └────┴────┴────┴────┴────┴────┴────┘│    │  │  [+ - * /]      │  │
+│                                       │    │  └─────────────────┘  │
+│  Each thread has:                     │    │                       │
+│  • Own register file (32 regs)        │    │  Total: 128 lanes     │
+│  • Own PC (normally same)             │    │  (32 threads × 4 ops) │
+│  • Own execution mask                 │    └───────────────────────┘
+└───────────────────────────────────────┘
+```
+
+## Key Characteristics
+
+**All threads execute the same instruction in lockstep**
+```
+Cycle 1: All threads execute "ADD R1, R2, R3"
+Cycle 2: All threads execute "MUL R4, R1, R5"
+Cycle 3: All threads execute "LOAD R6, [addr]"
+```
+
+## Branch Divergence Problem
+
+```
+if (threadIdx.x < 16) {
+    // Path A: Threads 0-15
+    result = a + b;
+} else {
+    // Path B: Threads 16-31
+    result = a * b;
+}
+```
+
+**Execution with Divergence**:
+```
+┌─────────────────────────────────────────┐
+│  WARP EXECUTION (Serialized Paths)      │
+├─────────────────────────────────────────┤
+│ Cycle 1-10:                             │
+│  Active:  T0-T15 ████████ (Path A: ADD) │
+│  Masked:  T16-T31 ──────── (waiting)    │
+├─────────────────────────────────────────┤
+│ Cycle 11-20:                            │
+│  Masked:  T0-T15 ──────── (idle)        │
+│  Active:  T16-T31 ████████ (Path B: MUL)│
+└─────────────────────────────────────────┘
+
+Performance: 50% utilization (2× slowdown)
+```
+
+**Best Practice**: Avoid divergent branches within a warp
+- Use predication when possible
+- Reorganize data to minimize divergence
+- Keep branch conditions uniform across warps
+
+## Register File Organization
+
+```
+Thread 0:  [R0][R1][R2]...[R31]  ← 32 registers
+Thread 1:  [R0][R1][R2]...[R31]
+Thread 2:  [R0][R1][R2]...[R31]
+...
+Thread 31: [R0][R1][R2]...[R31]
+
+Total: 32 threads × 32 registers = 1024 register entries per warp
+```
+
+## Execution Example: Vector Addition
+
+```c
+// Kernel: c[i] = a[i] + b[i]
+__global__ void vecAdd(float *a, float *b, float *c) {
+    int i = threadIdx.x;
+    c[i] = a[i] + b[i];
+}
+```
+
+**Hardware Execution**:
+```
+Warp executes in lockstep:
+
+Step 1: LOAD (all threads)
+  T0 loads a[0], b[0]
+  T1 loads a[1], b[1]
+  ...
+  T31 loads a[31], b[31]
+  → Memory coalesced into 2 transactions
+
+Step 2: ADD (all threads)
+  T0: c[0] = a[0] + b[0]
+  T1: c[1] = a[1] + b[1]
+  ...
+  T31: c[31] = a[31] + b[31]
+  → 32 parallel ALU operations
+
+Step 3: STORE (all threads)
+  All threads write results
+  → Memory coalesced into 1 transaction
+```
+
+**Efficiency**: 3 instructions, 32 elements processed = 10.7 elements/instruction

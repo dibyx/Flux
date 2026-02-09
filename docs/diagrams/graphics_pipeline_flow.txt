@@ -1,0 +1,139 @@
+# Graphics Pipeline Flow (Text Diagram)
+
+```
+┌──────────────────────────┐
+│   3D Model Input         │
+│  • Vertices (x,y,z)      │
+│  • Attributes (UV, color)│
+│  • Triangle indices      │
+└────────────┬─────────────┘
+             │
+             ▼
+┌─────────────────────────────┐
+│   VERTEX PROCESSING         │  ◄─── Programmable Shader
+│  • Model-View-Proj Matrix   │
+│  • Transformation to Clip   │
+│  • Per-vertex calc          │
+│                             │
+│  Parallelism: 32-64 verts   │
+└────────────┬────────────────┘
+             │
+     [Transformed Vertices]
+             │
+             ▼
+┌─────────────────────────────┐
+│  PRIMITIVE ASSEMBLY         │  ◄─── Fixed-Function
+│  • Group vertices → triangles│
+│  • Backface culling         │
+│  • Frustum culling          │
+└────────────┬────────────────┘
+             │
+      [Triangle Primitives]
+             │
+             ▼
+┌─────────────────────────────┐
+│     RASTERIZATION           │  ◄─── Fixed-Function
+│  • Triangle setup           │
+│  • Edge equation compute    │
+│  • Per-pixel coverage test  │
+│  • Attribute interpolation  │
+│                             │
+│  Output: Millions of pixels │
+└────────────┬────────────────┘
+             │
+   [Pixel Fragments + Attributes]
+             │
+             ▼
+┌─────────────────────────────┐
+│  FRAGMENT / PIXEL SHADER    │  ◄─── Programmable Shader
+│  • Texture sampling         │
+│  • Lighting calculations    │
+│  • Material evaluation      │
+│  • Output: RGBA color       │
+│                             │
+│  Parallelism: 1000s pixels  │
+└────────────┬────────────────┘
+             │
+        [Shaded Pixels]
+             │
+             ▼
+┌─────────────────────────────┐
+│   DEPTH / STENCIL TEST      │  ◄─── Fixed-Function
+│  • Z-buffer comparison      │
+│  • Early-Z optimization     │
+│  • Stencil operations       │
+│                             │
+│  Discard occluded pixels    │
+└────────────┬────────────────┘
+             │
+      [Visible Pixels]
+             │
+             ▼
+┌─────────────────────────────┐
+│    ALPHA BLENDING           │  ◄─── Fixed-Function
+│  • Read framebuffer         │
+│  • Blend equation           │
+│  • src*α + dst*(1-α)        │
+└────────────┬────────────────┘
+             │
+             ▼
+┌─────────────────────────────┐
+│    FRAMEBUFFER OUTPUT       │
+│  • Write to VRAM            │
+│  • Compression (optional)   │
+└────────────┬────────────────┘
+             │
+             ▼
+        [Final Image]
+```
+
+## Pipeline Characteristics
+
+### Stage-by-Stage Data Amplification
+
+```
+Input:    1,000,000 triangles
+          ↓
+Vertex:   3,000,000 vertices processed (3 per triangle)
+          ↓
+Raster:   100,000,000 fragments (avg 100 pixels/triangle)
+          ↓
+Shading:  100,000,000 fragment shader executions
+          ↓
+Output:   2,073,600 pixels (1920×1080)
+```
+
+**Key Insight**: Rasterization creates massive parallelism opportunity.
+
+### Programmable vs Fixed-Function
+
+**Programmable Stages** (Blue):
+- Vertex Shader: User-defined transformation code
+- Fragment Shader: User-defined per-pixel logic
+
+**Fixed-Function Stages** (Orange):
+- Rasterizer: Hardware-optimized triangle→pixel conversion
+- Depth Test: Simple comparison logic
+- Blending: Configurable equations (not Turing-complete)
+
+### Typical Execution Times (1920×1080 @ 60 FPS)
+
+```
+Target: 16.67ms per frame
+
+Vertex Processing:   ~0.5ms  (1M vertices)
+Rasterization:       ~2.0ms  (100M fragments generated)
+Fragment Shading:    ~10ms   (most expensive, programmable)
+Depth/Blend:         ~1.5ms  (memory-bound)
+Overhead:            ~2.7ms  (command processing, sync)
+                     ──────
+Total:               ~16.67ms ✓
+```
+
+## Optimization Strategies
+
+1. **Reduce Fragment Count**: LOD (Level of Detail), occlusion culling
+2. **Simplify Shaders**: Precompute when possible, lookup tables
+3. **Batch Draws**: Reduce command processor overhead
+4. **Use Mipmaps**: Cheaper texture sampling
+5. **Early-Z**: Render front-to-back to discard before shading

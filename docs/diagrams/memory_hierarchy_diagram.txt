@@ -1,0 +1,209 @@
+# Memory Hierarchy Diagram
+
+```
+                    ┌────────────────────────────────┐
+                    │        REGISTERS               │
+                    │  📦 64-256 KB per core         │
+                    │  ⚡ <1 cycle latency           │
+                    │  🚀 20+ TB/s bandwidth         │
+                    │  👤 Scope: Per-thread          │
+                    │  💾 32-256 regs × 32-bit       │
+                    └───────────┬────────────────────┘
+                                │ Fastest & Smallest
+                    ┌───────────▼────────────────────┐
+                    │    SHARED MEMORY (L0)          │
+                    │  📦 64-128 KB per core         │
+                    │  ⚡ ~5 cycles (no conflicts)   │
+                    │  🚀 10-15 TB/s bandwidth       │
+                    │  👥 Scope: Per-thread-block    │
+                    │  🔧 Programmer-managed         │
+                    └───────────┬────────────────────┘
+                                │
+                    ┌───────────▼────────────────────┐
+                    │        L1 CACHE                │
+                    │  📦 128-256 KB per core        │
+                    │  ⚡ ~30 cycles                 │
+                    │  🚀 8-10 TB/s bandwidth        │
+                    │  👥 Scope: Per-shader-core     │
+                    │  🔧 Hardware-managed           │
+                    └───────────┬────────────────────┘
+                                │
+                    ┌───────────▼────────────────────┐
+                    │        L2 CACHE                │
+                    │  📦 4-8 MB (shared)            │
+                    │  ⚡ ~100-200 cycles            │
+                    │  🚀 2-3 TB/s bandwidth         │
+                    │  🌍 Scope: Global (all cores)  │
+                    │  🔧 Hardware-managed           │
+                    └───────────┬────────────────────┘
+                                │
+                    ┌───────────▼────────────────────┐
+                    │   VRAM (GDDR6 / HBM)          │
+                    │  📦 8-24 GB capacity           │
+                    │  ⚡ ~200-400 cycles            │
+                    │  🚀 500 GB/s - 3 TB/s          │
+                    │  🌍 Scope: Global              │
+                    │  💰 $$$                        │
+                    └────────────────────────────────┘
+                                │ Slowest & Largest
+```
+
+## Latency Comparison (cycles)
+
+```
+Memory Access Latency (@ 1.5 GHz)
+┌─────────────┬──────────┬───────────┬────────────┐
+│   Level     │  Cycles  │  Nanosec  │  Relative  │
+├─────────────┼──────────┼───────────┼────────────┤
+│  Register   │    <1    │   <0.67   │     1×     │
+│  Shared Mem │    5     │    3.3    │     5×     │
+│  L1 Cache   │   30     │   20.0    │    30×     │
+│  L2 Cache   │  100     │   66.7    │   100×     │
+│  VRAM       │  200+    │  133.3+   │   200×+    │
+└─────────────┴──────────┴───────────┴────────────┘
+```
+
+## Bandwidth Pyramid
+
+```
+Bandwidth (TB/s) - Logarithmic Scale
+                    
+Registers        ████████████████████ 20+ TB/s
+                 
+Shared Mem       ███████████████ 15 TB/s
+                 
+L1 Cache         ██████████ 10 TB/s
+                 
+L2 Cache         ██ 2 TB/s
+                 
+VRAM             █ 0.5-1 TB/s (GDDR6)
+                 ██ 1-3 TB/s (HBM)
+```
+
+## Cache Line Flow
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Thread Request: Load data from address 0x1000          │
+└────────────┬────────────────────────────────────────────┘
+             │
+    ┌────────▼────────┐
+    │  Check L1 Cache │
+    └────────┬────────┘
+             │
+        Hit? ├─── YES ──→ Return in ~30 cycles ✓
+             │
+             NO
+             │
+    ┌────────▼────────┐
+    │  Check L2 Cache │
+    └────────┬────────┘
+             │
+        Hit? ├─── YES ──→ Return in ~100 cycles
+             │            Fill L1 cache ✓
+             NO
+             │
+    ┌────────▼────────┐
+    │   Access VRAM   │
+    │  Read 128-byte  │
+    │   cache line    │
+    └────────┬────────┘
+             │
+             └──────────→ Return in ~200 cycles
+                          Fill L2 and L1 ✓
+```
+
+## Memory Access Patterns Performance
+
+```
+┌────────────────────┬─────────────┬────────────┐
+│  Access Pattern    │ Transactions│ Efficiency │
+├────────────────────┼─────────────┼────────────┤
+│ Sequential         │      1      │   100%  ✓  │
+│ (coalesced)        │             │            │
+│                    │             │            │
+│ Stride-2           │      2      │    50%     │
+│                    │             │            │
+│ Stride-32          │     32      │     3%  ✗  │
+│ (worst case)       │             │            │
+│                    │             │            │
+│ Random             │    1-32     │  3-30%  ✗  │
+│                    │             │            │
+│ Broadcast          │      1      │   100%  ✓  │
+│ (all read same)    │  (special)  │            │
+└────────────────────┴─────────────┴────────────┘
+```
+
+## Memory Capacity vs Speed Trade-off
+
+```
+                        COST PER GB
+                             │
+                    Expensive│
+                             │
+         Registers  ●        │                 
+                             │      
+    Shared Memory      ●     │     
+                             │
+        L1 Cache          ●  │
+                             │
+        L2 Cache            ●│
+                             │
+           VRAM              │●
+                             │
+                       Cheap │
+                             └──────────────────────
+                                  CAPACITY (GB)
+                             0.001  0.1  1    10
+
+Legend: ● = Typical position for each memory level
+```
+
+## Optimization Strategies
+
+### 1. Register Spilling Problem
+```
+Too many variables → Register pressure → Spilling to local memory (slow!)
+
+Solution: Reduce variables, use smaller data types, profile register usage
+```
+
+### 2. Shared Memory Bank Conflicts
+```
+32 banks (one per thread in warp)
+
+Good:  shared[threadIdx.x]     ← Each thread → different bank
+Bad:   shared[threadIdx.x * 2]  ← Stride-2 → conflicts!
+```
+
+### 3. Cache Line Utilization
+```
+128-byte cache line = 32 × FP32 values
+
+Best:  Threads 0-31 access addresses 0, 4, 8, ..., 124
+       → 100% cache line utilization
+
+Worst: Threads access random addresses
+       → <10% utilization, 90% wasted bandwidth
+```
+
+## Real-World Example: Matrix Multiply
+
+**Naive (Memory-Bound)**:
+```
+for k in range(N):
+    C[i][j] += A[i][k] * B[k][j]  # 2 loads per FLOP
+
+Arithmetic Intensity: 2 FLOPs / 3 loads = 0.67 FLOPs/byte
+→ Memory-bound, GPU underutilized
+```
+
+**Optimized (Tiled with Shared Memory)**:
+```
+# Load TILE×TILE blocks into shared memory
+# Reuse each element TILE times
+
+Arithmetic Intensity: 2×TILE FLOPs / 3 loads
+For TILE=16: 32 FLOPs / 3 loads = 10.7 FLOPs/byte
+→ 16× improvement! Compute-bound ✓
+```

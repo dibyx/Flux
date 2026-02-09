@@ -1,0 +1,33 @@
+# Yosys synthesis script for flux GPU with Graphics
+# Target: ULX3S LFE5U-85F
+
+# Read shader core modules
+read_verilog -sv ../../rtl/src/shader_core/instruction_decoder.sv
+read_verilog -sv ../../rtl/src/shader_core/simd_alu.sv
+read_verilog -sv ../../rtl/src/shader_core/register_file.sv
+read_verilog -sv ../../rtl/src/shader_core/shader_core.sv
+
+# Read graphics pipeline modules
+read_verilog -sv ../../rtl/src/video/vga_timing_generator.sv
+read_verilog -sv ../../rtl/src/video/vga_controller.sv
+read_verilog -sv ../../rtl/src/video/framebuffer.sv
+read_verilog -sv ../../rtl/src/raster/edge_function.sv
+read_verilog -sv ../../rtl/src/raster/rasterizer.sv
+read_verilog -sv ../../rtl/src/gpu_graphics_top.sv
+
+# Set top module to graphics (includes compute)
+hierarchy -top gpu_graphics_top
+
+# Synthesis optimization
+proc
+opt
+fsm
+opt
+memory
+opt
+
+# Technology mapping for ECP5
+synth_ecp5 -top gpu_graphics_top -json flux_gpu.json
+
+# Statistics
+stat
